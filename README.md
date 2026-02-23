@@ -1,24 +1,32 @@
-# MEAN Stack CRUD Application — DevOps Deployment
+# 📋 CRUD Application — MEAN Stack with Docker & CI/CD
 
-A full-stack CRUD application built with the **MEAN stack** (MongoDB, Express, Angular 15, Node.js), containerized with Docker, deployed on an Ubuntu VM with Nginx reverse proxy, and automated with a CI/CD pipeline using GitHub Actions.
+A full-stack **CRUD (Create, Read, Update, Delete)** application built with the **MEAN stack** (MongoDB, Express.js, Angular, Node.js), containerized with **Docker**, and automated with **GitHub Actions CI/CD pipeline**.
+
+> **Live URL:** `http://3.8.3.228/`
 
 ---
 
-## 📋 Table of Contents
+## 📑 Table of Contents
 
 - [Architecture Overview](#architecture-overview)
+- [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Step 1: Local Development Setup](#step-1-local-development-setup)
-- [Step 2: Docker Hub Setup](#step-2-docker-hub-setup)
-- [Step 3: Build and Push Docker Images](#step-3-build-and-push-docker-images)
-- [Step 4: Ubuntu VM Setup (Cloud)](#step-4-ubuntu-vm-setup-cloud)
-- [Step 5: Deploy on VM with Docker Compose](#step-5-deploy-on-vm-with-docker-compose)
-- [Step 6: GitHub Repository Setup](#step-6-github-repository-setup)
-- [Step 7: CI/CD Pipeline Configuration](#step-7-cicd-pipeline-configuration)
-- [Step 8: Testing the CI/CD Pipeline](#step-8-testing-the-cicd-pipeline)
-- [Nginx Reverse Proxy Explained](#nginx-reverse-proxy-explained)
-- [Troubleshooting](#troubleshooting)
+- [Docker Configuration](#docker-configuration)
+  - [Backend Dockerfile](#backend-dockerfile)
+  - [Frontend Dockerfile](#frontend-dockerfile)
+  - [Docker Compose](#docker-compose)
+- [Nginx Configuration](#nginx-configuration)
+  - [Reverse Proxy (Main)](#reverse-proxy-main)
+  - [Frontend Nginx](#frontend-nginx)
+- [CI/CD Pipeline](#cicd-pipeline)
+  - [Pipeline Overview](#pipeline-overview)
+  - [GitHub Secrets Required](#github-secrets-required)
+  - [Pipeline Stages](#pipeline-stages)
+- [Setup & Deployment](#setup--deployment)
+  - [Prerequisites](#prerequisites)
+  - [Local Development](#local-development)
+  - [Production Deployment](#production-deployment)
+- [API Endpoints](#api-endpoints)
 - [Screenshots](#screenshots)
 
 ---
@@ -26,33 +34,47 @@ A full-stack CRUD application built with the **MEAN stack** (MongoDB, Express, A
 ## Architecture Overview
 
 ```
-                         ┌─────────────────────────────────────────────┐
-                         │              Ubuntu VM (Cloud)              │
-                         │                                             │
-  User Browser ──────►   │  ┌──────────────────────────────────────┐   │
-  (Port 80)              │  │        Nginx Reverse Proxy           │   │
-                         │  │           (Port 80)                  │   │
-                         │  │                                      │   │
-                         │  │   /api/*  ──►  Backend (Port 8080)   │   │
-                         │  │   /*      ──►  Frontend (Port 4200)  │   │
-                         │  └──────────────────────────────────────┘   │
-                         │                                             │
-                         │  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-                         │  │ Frontend │  │ Backend  │  │ MongoDB  │  │
-                         │  │ (Angular)│  │ (Node.js)│  │ (DB)     │  │
-                         │  │ Nginx    │  │ Express  │  │ Port     │  │
-                         │  │ :4200    │  │ :8080    │  │ :27017   │  │
-                         │  └──────────┘  └──────────┘  └──────────┘  │
-                         │         All connected via Docker Network    │
-                         └─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                      AWS EC2 VM                         │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              Nginx Reverse Proxy (:80)          │    │
+│  │                                                 │    │
+│  │   /api/*  ──►  Backend Container (:8080)        │    │
+│  │   /*      ──►  Frontend Container (:80)         │    │
+│  └─────────────────────────────────────────────────┘    │
+│                                                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │   Frontend   │  │   Backend    │  │   MongoDB    │  │
+│  │   (Angular)  │  │  (Node.js)   │  │   (Mongo 6)  │  │
+│  │   Nginx:80   │  │  Express:8080│  │    :27017    │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│                                                         │
+│         All connected via Docker Network                │
+└─────────────────────────────────────────────────────────┘
 ```
 
-**How it works:**
-1. User opens `http://<VM_IP>` in their browser (port 80)
-2. Nginx receives the request
-3. If the URL starts with `/api/`, Nginx forwards it to the **Backend** container
-4. If the URL is anything else (`/`, `/tutorials`, etc.), Nginx forwards it to the **Frontend** container
-5. The Backend talks to **MongoDB** using Docker's internal DNS (`mongodb://mongodb:27017/dd_db`)
+**Flow:**
+1. User opens `http://3.8.3.228/` in browser
+2. Nginx reverse proxy receives the request on port **80**
+3. Routes `/api/*` requests → **Backend** (Node.js + Express)
+4. Routes all other requests → **Frontend** (Angular + Nginx)
+5. Backend communicates with **MongoDB** for data operations
+
+---
+
+## Tech Stack
+
+| Layer          | Technology              | Purpose                    |
+| -------------- | ----------------------- | -------------------------- |
+| **Frontend**   | Angular 15              | User Interface (SPA)       |
+| **Backend**    | Node.js + Express.js    | REST API Server            |
+| **Database**   | MongoDB 6.0             | NoSQL Data Storage         |
+| **Web Server** | Nginx 1.25              | Reverse Proxy & Static Files |
+| **Container**  | Docker + Docker Compose | Containerization           |
+| **CI/CD**      | GitHub Actions          | Automated Build & Deploy   |
+| **Registry**   | Docker Hub              | Image Storage              |
+| **Cloud**      | AWS EC2 (Ubuntu)        | Production Server          |
 
 ---
 
@@ -62,443 +84,492 @@ A full-stack CRUD application built with the **MEAN stack** (MongoDB, Express, A
 crud-dd-task-mean-app/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml              # CI/CD pipeline (GitHub Actions)
+│       └── ci-cd.yml              # GitHub Actions CI/CD pipeline
 ├── backend/
-│   ├── Dockerfile                  # Docker image for backend
-│   ├── .dockerignore               # Files to exclude from Docker build
-│   ├── package.json
-│   ├── server.js                   # Express server entry point
+│   ├── Dockerfile                 # Backend Docker image config
+│   ├── package.json               # Node.js dependencies
+│   ├── server.js                  # Express server entry point
 │   └── app/
-│       ├── config/db.config.js     # MongoDB connection (uses env variable)
-│       ├── controllers/            # API logic
-│       ├── models/                 # Mongoose schemas
-│       └── routes/                 # API routes
+│       ├── config/
+│       │   └── db.config.js       # MongoDB connection config
+│       ├── controllers/
+│       │   └── tutorial.controller.js  # CRUD logic
+│       ├── models/
+│       │   ├── index.js           # Mongoose setup
+│       │   └── tutorial.model.js  # Tutorial schema
+│       └── routes/
+│           └── turorial.routes.js # API route definitions
 ├── frontend/
-│   ├── Dockerfile                  # Multi-stage Docker image (build + serve)
-│   ├── .dockerignore
-│   ├── nginx.conf                  # Nginx config inside frontend container
-│   ├── package.json
-│   └── src/                        # Angular source code
+│   ├── Dockerfile                 # Frontend Docker image (multi-stage)
+│   ├── nginx.conf                 # Nginx config for Angular routing
+│   ├── package.json               # Angular dependencies
+│   └── src/
+│       └── app/
+│           ├── components/        # Angular components
+│           │   ├── add-tutorial/
+│           │   ├── tutorial-details/
+│           │   └── tutorials-list/
+│           ├── models/            # TypeScript interfaces
+│           └── services/          # HTTP service layer
 ├── nginx/
-│   └── nginx.conf                  # Nginx reverse proxy config (main entry)
-├── docker-compose.yml              # Defines all 4 services
-├── .gitignore
-└── README.md
+│   └── nginx.conf                 # Reverse proxy configuration
+├── docker-compose.yml             # Multi-container orchestration
+└── README.md                      # This file
 ```
 
 ---
 
-## Prerequisites
+## Docker Configuration
 
-- **Docker** and **Docker Compose** installed
-- **Docker Hub** account ([hub.docker.com](https://hub.docker.com))
-- **GitHub** account
-- **Cloud VM** (AWS EC2 / Azure / GCP / DigitalOcean) running Ubuntu 22.04+
-- **SSH key pair** for VM access
-- **Node.js 18+** and **Angular CLI** (for local development only)
+### Backend Dockerfile
+
+**File:** `backend/Dockerfile`
+
+```dockerfile
+# Production image using lightweight Alpine
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy dependency files first (Docker layer caching)
+COPY package*.json ./
+
+# Install only production dependencies
+RUN npm install --production
+
+# Copy application source code
+COPY . .
+
+EXPOSE 8080
+
+CMD ["node", "server.js"]
+```
+
+**Key Points:**
+- Uses `node:18-alpine` — lightweight (~50MB vs ~350MB for full image)
+- Copies `package*.json` first for **Docker layer caching** — dependencies are cached unless `package.json` changes
+- `--production` flag skips devDependencies, reducing image size
 
 ---
 
-## Step 1: Local Development Setup
+### Frontend Dockerfile
+
+**File:** `frontend/Dockerfile`
+
+```dockerfile
+# Stage 1: Build Angular app with Node.js
+FROM node:18-alpine AS build
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build -- --configuration production
+
+# Stage 2: Serve with Nginx (no Node.js needed!)
+FROM nginx:1.25-alpine
+
+RUN rm -rf /usr/share/nginx/html/*
+COPY --from=build /app/dist/angular-15-crud /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+**Key Points:**
+- **Multi-stage build** — Stage 1 compiles Angular, Stage 2 serves static files
+- Final image contains only Nginx + compiled HTML/JS/CSS (~25MB)
+- Node.js is NOT included in the production image
+
+---
+
+### Docker Compose
+
+**File:** `docker-compose.yml`
+
+```yaml
+version: '3.8'
+
+services:
+  # Database
+  mongodb:
+    image: mongo:6.0
+    container_name: mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
+
+  # Backend API
+  backend:
+    image: yaswanth3333/crud-backend:latest
+    container_name: backend
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/dd_db
+      - CORS_ORIGIN=*
+      - PORT=8080
+    depends_on:
+      - mongodb
+    networks:
+      - app-network
+
+  # Frontend (Angular)
+  frontend:
+    image: yaswanth3333/crud-frontend:latest
+    container_name: frontend
+    restart: always
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nginx-proxy
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - app-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  app-network:
+    driver: bridge
+```
+
+**Key Points:**
+- **4 services**: MongoDB, Backend, Frontend, Nginx
+- `mongodb_data` volume persists database data across container restarts
+- `app-network` allows containers to communicate using service names as hostnames
+- `depends_on` ensures correct startup order
+- `restart: always` auto-restarts crashed containers
+
+---
+
+## Nginx Configuration
+
+### Reverse Proxy (Main)
+
+**File:** `nginx/nginx.conf`
+
+```nginx
+server {
+    listen 80;
+    server_name localhost;
+
+    # API requests → Backend container
+    location /api/ {
+        proxy_pass http://backend:8080/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # All other requests → Frontend container
+    location / {
+        proxy_pass http://frontend:80/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+**How Routing Works:**
+| Request URL | Nginx Routes To | Container |
+|---|---|---|
+| `http://3.8.3.228/` | `frontend:80` | Angular App |
+| `http://3.8.3.228/tutorials` | `frontend:80` | Angular App |
+| `http://3.8.3.228/api/tutorials` | `backend:8080` | Node.js API |
+| `http://3.8.3.228/api/tutorials/123` | `backend:8080` | Node.js API |
+
+---
+
+### Frontend Nginx
+
+**File:** `frontend/nginx.conf`
+
+```nginx
+server {
+    listen 80;
+    server_name localhost;
+
+    location / {
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        try_files $uri $uri/ /index.html;   # Angular SPA routing support
+    }
+}
+```
+
+**Why `try_files`?**
+- Angular is a Single Page Application (SPA)
+- When user navigates to `/tutorials`, the browser requests that path from Nginx
+- Without `try_files`, Nginx returns 404 because there's no `/tutorials` file
+- `try_files` falls back to `index.html`, letting Angular's router handle the URL
+
+---
+
+## CI/CD Pipeline
+
+### Pipeline Overview
+
+```
+┌──────────┐     ┌────────────────┐     ┌──────────────┐     ┌──────────┐
+│  Developer│────►│  GitHub Repo   │────►│GitHub Actions │────►│  AWS VM  │
+│  git push │     │  (main branch) │     │  CI/CD        │     │  Deploy  │
+└──────────┘     └────────────────┘     └──────────────┘     └──────────┘
+                                              │
+                                              ▼
+                                        ┌──────────────┐
+                                        │  Docker Hub   │
+                                        │  (Images)     │
+                                        └──────────────┘
+```
+
+**Trigger:** Every `git push` to `main` branch (or manual trigger from GitHub UI)
+
+---
+
+### GitHub Secrets Required
+
+Go to: **GitHub Repo → Settings → Secrets and variables → Actions**
+
+| Secret Name | Description | Example |
+|---|---|---|
+| `DOCKERHUB_TOKEN` | Docker Hub Personal Access Token | `dckr_pat_xxxx...` |
+| `VM_HOST` | EC2 instance public IP | `3.8.3.228` |
+| `VM_USERNAME` | SSH username for the VM | `ubuntu` |
+| `VM_SSH_KEY` | Private SSH key (`.pem` file content) | `-----BEGIN RSA PRIVATE KEY-----...` |
+
+**How to create Docker Hub Token:**
+1. Go to [hub.docker.com](https://hub.docker.com) → Login
+2. Account Settings → Security → Personal Access Tokens
+3. Click **Generate New Token** → Name: `github-cicd` → Access: **Read & Write**
+4. Copy the token
+
+---
+
+### Pipeline Stages
+
+**File:** `.github/workflows/ci-cd.yml`
+
+#### Stage 1: Build & Push Docker Images
+
+```yaml
+build-and-push:
+  runs-on: ubuntu-latest
+  steps:
+    - Checkout code from GitHub
+    - Set up Docker Buildx
+    - Login to Docker Hub
+    - Build & Push Backend Image (tagged: latest + commit SHA)
+    - Build & Push Frontend Image (tagged: latest + commit SHA)
+```
+
+#### Stage 2: Deploy to VM
+
+```yaml
+deploy:
+  runs-on: ubuntu-latest
+  needs: build-and-push        # Waits for Stage 1 to succeed
+  steps:
+    - Copy docker-compose.yml & nginx config to VM via SCP
+    - SSH into VM and run:
+        - docker compose pull   # Pull latest images
+        - docker compose down   # Stop old containers
+        - docker compose up -d  # Start new containers
+        - docker image prune    # Clean up old images
+```
+
+**Result:** Every `git push` → Images built → Pushed to Docker Hub → Deployed on VM → App is live! 🚀
+
+---
+
+## Setup & Deployment
+
+### Prerequisites
+
+| Tool | Version | Purpose |
+|---|---|---|
+| Docker | 20+ | Container runtime |
+| Docker Compose | v2+ | Multi-container orchestration |
+| Node.js | 18+ | Local development (optional) |
+| Git | 2+ | Version control |
+| AWS Account | — | EC2 instance for hosting |
+
+---
+
+### Local Development
 
 ```bash
-# Clone the repository
-git clone https://github.com/<your-username>/crud-dd-task-mean-app.git
+# 1. Clone the repository
+git clone https://github.com/yaswanth756/crud-dd-task-mean-app.git
 cd crud-dd-task-mean-app
 
-# Backend
-cd backend
-npm install
-node server.js
-npm install
-node server.js
-# Backend runs on http://localhost:8080
+# 2. Start all services
+docker compose up -d
 
-# Frontend (in a new terminal)
-cd frontend
-npm install
-ng serve --port 8081
-# Frontend runs on http://localhost:8081
+# 3. Open in browser
+# App:     http://localhost
+# API:     http://localhost:8080/api/tutorials
+# MongoDB: localhost:27017
 ```
 
-> **Note:** For local development, you need MongoDB running locally on port 27017.
+**Stop the app:**
+```bash
+docker compose down
+```
+
+**Stop and remove all data:**
+```bash
+docker compose down -v    # -v removes MongoDB volume too
+```
 
 ---
 
-## Step 2: Docker Hub Setup
+### Production Deployment
 
-1. Go to [hub.docker.com](https://hub.docker.com) and create an account (if you don't have one)
-2. Create an **Access Token**:
-   - Go to **Account Settings** → **Security** → **New Access Token**
-   - Name it `github-actions`
-   - Copy and save the token (you won't see it again!)
-3. Create two repositories on Docker Hub:
-   - `<your-username>/crud-backend`
-   - `<your-username>/crud-frontend`
+#### Step 1: Launch AWS EC2 Instance
 
----
+1. Go to AWS Console → EC2 → **Launch Instance**
+2. **Name:** `crud-mean-app-server`
+3. **AMI:** Ubuntu 22.04 LTS
+4. **Instance type:** `t2.micro` (free tier) or `t2.small`
+5. **Key pair:** Create or select existing `.pem` key
+6. **Security Group** — Open these ports:
 
-## Step 3: Build and Push Docker Images
+| Port | Type | Source | Purpose |
+|------|------|--------|---------|
+| 22 | SSH | Your IP | SSH access |
+| 80 | HTTP | 0.0.0.0/0 | Web app (Nginx) |
+| 8080 | Custom TCP | 0.0.0.0/0 | Backend API |
 
-```bash
-# From the project root directory
-cd crud-dd-task-mean-app
-
-# Login to Docker Hub
-docker login -u <your-dockerhub-username>
-
-# Build and push Backend image
-docker build -t <your-dockerhub-username>/crud-backend:latest ./backend
-docker push <your-dockerhub-username>/crud-backend:latest
-
-# Build and push Frontend image
-docker build -t <your-dockerhub-username>/crud-frontend:latest ./frontend
-docker push <your-dockerhub-username>/crud-frontend:latest
-```
-
-**What's happening?**
-- `docker build` reads the `Dockerfile` and creates an image
-- `-t` tags the image with your Docker Hub username and repository name
-- `docker push` uploads the image to Docker Hub
-
----
-
-## Step 4: Ubuntu VM Setup (Cloud)
-
-### 4.1 Create the VM
-
-**AWS EC2 example:**
-1. Launch an EC2 instance:
-   - **AMI:** Ubuntu 22.04 LTS
-   - **Instance type:** t2.medium (recommended) or t2.micro (free tier)
-   - **Security Group:** Allow inbound ports: **22** (SSH), **80** (HTTP), **8080** (Backend)
-   - **Key pair:** Create or use existing `.pem` key
-2. Note down the **Public IP address**
-
-### 4.2 SSH into the VM
+#### Step 2: Install Docker on EC2
 
 ```bash
-# Connect to your VM
-ssh -i <your-key.pem> ubuntu@<VM_PUBLIC_IP>
-```
-
-### 4.3 Install Docker and Docker Compose on the VM
-
-```bash
-# Update system packages
-sudo apt update && sudo apt upgrade -y
+# SSH into your VM
+ssh -i your-key.pem ubuntu@3.8.3.228
 
 # Install Docker
-sudo apt install -y docker.io
+sudo apt update
+sudo apt install -y docker.io docker-compose-plugin
 
-# Start Docker and enable it on boot
-sudo systemctl start docker
-sudo systemctl enable docker
-
-# Add your user to the docker group (so you don't need 'sudo' every time)
+# Add user to docker group (no sudo needed for docker commands)
 sudo usermod -aG docker $USER
-
-# Install Docker Compose plugin
-sudo apt install -y docker-compose-plugin
-
-# Log out and log back in for group changes to take effect
-exit
-# SSH back in
-ssh -i <your-key.pem> ubuntu@<VM_PUBLIC_IP>
+newgrp docker
 
 # Verify installation
 docker --version
 docker compose version
 ```
 
-### 4.4 Install Git and Clone the Repository
+#### Step 3: Configure GitHub Secrets
+
+Add the 4 secrets mentioned in [GitHub Secrets Required](#github-secrets-required).
+
+#### Step 4: Push Code & Auto-Deploy
 
 ```bash
-# Install Git
-sudo apt install -y git
+# Make a change, commit, and push
+git add .
+git commit -m "deploy: update application"
+git push origin main
 
-# Clone your repository
-cd ~
-git clone https://github.com/<your-username>/crud-dd-task-mean-app.git
-cd crud-dd-task-mean-app
+# GitHub Actions will automatically:
+# 1. Build Docker images
+# 2. Push to Docker Hub
+# 3. SSH into VM and deploy
 ```
 
----
-
-## Step 5: Deploy on VM with Docker Compose
+#### Step 5: Verify Deployment
 
 ```bash
-# Navigate to the project directory
-cd ~/crud-dd-task-mean-app
-
-# Set your Docker Hub username as an environment variable
-export DOCKERHUB_USERNAME=<your-dockerhub-username>
-
-# Pull the Docker images from Docker Hub
-docker compose pull
-
-# Start all services in the background
-docker compose up -d
-
-# Check that all containers are running
+# Check running containers on VM
+ssh -i your-key.pem ubuntu@3.8.3.228
 docker compose ps
 
-# Check logs (optional)
-docker compose logs -f
+# Or test from your browser:
+# Frontend:  http://3.8.3.228/
+# API:       http://3.8.3.228/api/tutorials
 ```
-
-**Expected output of `docker compose ps`:**
-```
-NAME            IMAGE                                    STATUS          PORTS
-mongodb         mongo:6.0                                Up              0.0.0.0:27017->27017/tcp
-backend         <username>/crud-backend:latest           Up              0.0.0.0:8080->8080/tcp
-frontend        <username>/crud-frontend:latest          Up              0.0.0.0:4200->80/tcp
-nginx-proxy     nginx:1.25-alpine                        Up              0.0.0.0:80->80/tcp
-```
-
-**Access the application:** Open `http://<VM_PUBLIC_IP>` in your browser!
 
 ---
 
-## Step 6: GitHub Repository Setup
+## API Endpoints
 
-### 6.1 Create a GitHub Repository
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/tutorials` | Get all tutorials |
+| `GET` | `/api/tutorials/:id` | Get tutorial by ID |
+| `POST` | `/api/tutorials` | Create new tutorial |
+| `PUT` | `/api/tutorials/:id` | Update tutorial by ID |
+| `DELETE` | `/api/tutorials/:id` | Delete tutorial by ID |
+| `DELETE` | `/api/tutorials` | Delete all tutorials |
+| `GET` | `/api/tutorials?title=keyword` | Search tutorials by title |
 
-1. Go to [github.com](https://github.com) → **New Repository**
-2. Name: `crud-dd-task-mean-app`
-3. Visibility: Public
-4. Don't initialize with README (we already have one)
-
-### 6.2 Push Code to GitHub
-
+**Example — Create a tutorial:**
 ```bash
-cd crud-dd-task-mean-app
-
-# Initialize git (if not already)
-git init
-git add .
-git commit -m "Initial commit: MEAN stack CRUD app with Docker and CI/CD"
-
-# Add remote and push
-git remote add origin https://github.com/<your-username>/crud-dd-task-mean-app.git
-git branch -M main
-git push -u origin main
+curl -X POST http://3.8.3.228/api/tutorials \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Docker Tutorial", "description": "Learn Docker basics"}'
 ```
 
----
 
-## Step 7: CI/CD Pipeline Configuration
 
-### 7.1 Add GitHub Secrets
+## Docker Hub Images
 
-Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+| Image | URL |
+|-------|-----|
+| Backend | [yaswanth3333/crud-backend](https://hub.docker.com/r/yaswanth3333/crud-backend) |
+| Frontend | [yaswanth3333/crud-frontend](https://hub.docker.com/r/yaswanth3333/crud-frontend) |
 
-Add these 4 secrets:
-
-| Secret Name | Value | Description |
-|---|---|---|
-| `DOCKERHUB_USERNAME` | `your-dockerhub-username` | Your Docker Hub username |
-| `DOCKERHUB_TOKEN` | `dckr_pat_xxxxx` | Docker Hub access token (from Step 2) |
-| `VM_HOST` | `1.2.3.4` | Your VM's public IP address |
-| `VM_USERNAME` | `ubuntu` | SSH username for the VM |
-| `VM_SSH_KEY` | `-----BEGIN OPENSSH PRIVATE KEY-----...` | Contents of your private SSH key file |
-
-### 7.2 How to Get the SSH Private Key
-
+**Pull manually:**
 ```bash
-# On your local machine, display the private key content
-cat ~/.ssh/your-key.pem
-# OR
-cat ~/.ssh/id_rsa
-
-# Copy the ENTIRE output (including BEGIN and END lines) and paste as VM_SSH_KEY secret
+docker pull yaswanth3333/crud-backend:latest
+docker pull yaswanth3333/crud-frontend:latest
 ```
-
-### 7.3 Understanding the Pipeline
-
-The CI/CD pipeline (`.github/workflows/deploy.yml`) does the following:
-
-```
-Push to 'main' branch
-        │
-        ▼
-┌─────────────────────────┐
-│  Job 1: Build & Push    │
-│                         │
-│  1. Checkout code       │
-│  2. Login to Docker Hub │
-│  3. Build backend image │
-│  4. Push backend image  │
-│  5. Build frontend image│
-│  6. Push frontend image │
-└────────┬────────────────┘
-         │ (only if Job 1 succeeds)
-         ▼
-┌─────────────────────────┐
-│  Job 2: Deploy          │
-│  2. git pull latest code│
-│  3. docker compose pull │
-│  4. docker compose up   │
-│  5. Cleanup old images  │
-└─────────────────────────┘
-```
-
----
-
-## Step 8: Testing the CI/CD Pipeline
-
-1. Make a small change (e.g., edit this README)
-2. Commit and push:
-
-```bash
-git add .
-git commit -m "Test CI/CD pipeline"
-git push origin main
-```
-
-3. Go to your GitHub repository → **Actions** tab
-4. Watch the pipeline run!
-5. Once complete, refresh `http://<VM_PUBLIC_IP>` to see the changes
-
----
-
-## Nginx Reverse Proxy Explained
-
-We use **two Nginx instances** in this setup:
-
-### 1. Nginx Reverse Proxy (`nginx/nginx.conf`)
-- Runs as a separate container on **port 80**
-- Acts as the **main entry point** for the entire application
-- Routes requests:
-  - `/api/*` → Backend container (port 8080)
-  - `/*` → Frontend container (port 4200)
-
-### 2. Nginx inside Frontend Container (`frontend/nginx.conf`)
-- Serves the compiled Angular static files (HTML, CSS, JS)
-- Handles Angular client-side routing with `try_files`
-- Without this, refreshing on `/tutorials` would give a 404
-
-**Why Nginx as reverse proxy?**
-- Single entry point (port 80) — users don't need to know about internal ports
-- Can add SSL/HTTPS later without changing the app
-- Load balancing capability if you scale up
-- Security — internal services aren't directly exposed
 
 ---
 
 ## Troubleshooting
 
-### Check container status
-```bash
-docker compose ps
-```
-
-### View logs for a specific service
-```bash
-docker compose logs backend
-docker compose logs frontend
-docker compose logs mongodb
-docker compose logs nginx
-```
-
-### Restart a specific service
-```bash
-docker compose restart backend
-```
-
-### Rebuild and restart everything
-```bash
-docker compose down
-docker compose pull
-docker compose up -d
-```
-
-### Check if MongoDB is accessible
-```bash
-docker exec -it mongodb mongosh
-# Inside mongosh:
-show dbs
-use dd_db
-db.tutorials.find()
-```
-
-### Common Issues
-
 | Issue | Solution |
-|---|---|
-| Port 80 already in use | `sudo systemctl stop apache2` or `sudo systemctl stop nginx` |
-| Cannot connect to MongoDB | Check if mongodb container is running: `docker compose ps` |
-| Frontend shows blank page | Check frontend logs: `docker compose logs frontend` |
-| API calls fail (CORS error) | Check backend CORS_ORIGIN env variable in docker-compose.yml |
-| CI/CD SSH fails | Verify VM_SSH_KEY secret has the complete private key |
-| Docker permission denied | Run `sudo usermod -aG docker $USER` and re-login |
+|-------|----------|
+| Site not loading | Check EC2 Security Group — ports 80, 8080 must be open |
+| Container crashing | Run `docker compose logs <service-name>` to see errors |
+| MongoDB connection failed | Ensure MongoDB container is running: `docker compose ps` |
+| CI/CD pipeline failed | Check GitHub Actions logs — verify all 4 secrets are set |
+| Images not pulling | Verify Docker Hub token has Read & Write permissions |
+| Port already in use | Run `docker compose down` first, then `docker compose up -d` |
 
 ---
 
-## Screenshots
+## Author
 
-> **Add your screenshots in this section after deployment**
-
-### 1. CI/CD Configuration and Execution
-<!-- ![GitHub Actions Pipeline](screenshots/cicd-pipeline.png) -->
-- GitHub Actions workflow running
-- Build and push job completing successfully
-- Deploy job executing SSH commands
-
-### 2. Docker Image Build and Push
-<!-- ![Docker Hub Images](screenshots/dockerhub-images.png) -->
-- Docker Hub repositories showing pushed images
-- Image tags (latest + commit SHA)
-
-### 3. Application Deployment and Working UI
-<!-- ![Working Application](screenshots/app-ui.png) -->
-- Tutorial list page
-- Add tutorial page
-- Edit tutorial page
-
-### 4. Nginx Setup and Infrastructure
-<!-- ![Infrastructure](screenshots/infrastructure.png) -->
-- `docker compose ps` showing all running containers
-- Nginx reverse proxy configuration
-- VM/Cloud instance details
+**Yaswanth** — [GitHub](https://github.com/yaswanth756)
 
 ---
-
-## Tech Stack
-
-| Component | Technology |
-|---|---|
-| Frontend | Angular 15 |
-| Backend | Node.js + Express.js |
-| Database | MongoDB 6.0 |
-| Containerization | Docker |
-| Orchestration | Docker Compose |
-| Reverse Proxy | Nginx |
-| CI/CD | GitHub Actions |
-| Cloud | Ubuntu VM (AWS/Azure/GCP) |
-
----
-
-## Quick Reference Commands
-
-```bash
-# Start the application
-docker compose up -d
-
-# Stop the application (keeps data)
-docker compose stop
-
-# Stop and remove containers (keeps data in volumes)
-docker compose down
-
-# Stop, remove containers AND delete data
-docker compose down -v
-
-# View running containers
-docker compose ps
-
-# View all logs
-docker compose logs -f
-
-# Restart after pulling new images
-docker compose pull && docker compose up -d --force-recreate
