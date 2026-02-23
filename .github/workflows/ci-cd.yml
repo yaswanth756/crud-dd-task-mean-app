@@ -1,0 +1,138 @@
+# ============================================================
+# CI/CD Pipeline - Build, Push & Deploy Automatically
+# ============================================================
+# WHAT THIS DOES:
+# 1. When you push code to 'main' branch → this runs automatically
+# 2. Builds Docker images for frontend & backend
+# 3. Pushes them to Docker Hub
+# 4. SSHs into your VM and deploys the latest images
+# ============================================================
+
+name: CI/CD Pipeline - Build, Push & Deploy
+
+# ===== TRIGGER: When to run this pipeline =====
+on:
+  push:
+    branches:
+      - main        # Runs when you push to 'main' branch
+  
+  # Allows you to manually trigger from GitHub UI (Actions tab → Run workflow)
+  workflow_dispatch:
+
+# ===== ENVIRONMENT VARIABLES =====
+env:
+  DOCKERHUB_USERNAME: yaswanth3333
+  BACKEND_IMAGE: yaswanth3333/crud-backend
+  FRONTEND_IMAGE: yaswanth3333/crud-frontend
+
+jobs:
+  # ============================================================
+  # JOB 1: BUILD & PUSH DOCKER IMAGES
+  # ============================================================
+  build-and-push:
+    name: 🔨 Build & Push Docker Images
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Get the code from GitHub
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Docker Buildx (for efficient multi-platform builds)
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Step 3: Login to Docker Hub using secrets
+      - name: 🔐 Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Step 4: Build & Push Backend Image
+      - name: 🔨 Build & Push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Step 5: Build & Push Frontend Image
+      - name: 🔨 Build & Push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================
+  # JOB 2: DEPLOY TO VM VIA SSH
+  # ============================================================
+  deploy:
+    name: 🚀 Deploy to VM
+    runs-on: ubuntu-latest
+    needs: build-and-push   # Only runs AFTER build-and-push succeeds
+
+    steps:
+      # Step 1: Checkout code (to get docker-compose.yml & nginx config)
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Copy docker-compose.yml and nginx config to VM
+      - name: 📁 Copy files to VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USERNAME }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: ${{ secrets.VM_PORT || 22 }}
+          source: "docker-compose.yml,nginx/"
+          target: "/home/${{ secrets.VM_USERNAME }}/crud-app"
+
+      # Step 3: SSH into VM and deploy
+      - name: 🚀 Deploy on VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USERNAME }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: ${{ secrets.VM_PORT || 22 }}
+          script: |
+            echo "========================================="
+            echo "🚀 Starting Deployment..."
+            echo "========================================="
+            
+            # Navigate to app directory
+            cd /home/${{ secrets.VM_USERNAME }}/crud-app
+            
+            # Export Docker Hub username for docker-compose
+            export DOCKERHUB_USERNAME=${{ env.DOCKERHUB_USERNAME }}
+            
+            # Pull latest images from Docker Hub
+            echo "📥 Pulling latest images..."
+            docker compose pull
+            
+            # Stop old containers and start new ones
+            echo "🔄 Restarting containers..."
+            docker compose down
+            docker compose up -d
+            
+            # Clean up old/unused images to save disk space
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f
+            
+            # Show running containers
+            echo "========================================="
+            echo "✅ Deployment Complete! Running containers:"
+            echo "========================================="
+            docker compose ps

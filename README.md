@@ -110,6 +110,8 @@ cd crud-dd-task-mean-app
 cd backend
 npm install
 node server.js
+npm install
+node server.js
 # Backend runs on http://localhost:8080
 
 # Frontend (in a new terminal)
@@ -334,8 +336,6 @@ Push to 'main' branch
          ▼
 ┌─────────────────────────┐
 │  Job 2: Deploy          │
-│                         │
-│  1. SSH into VM         │
 │  2. git pull latest code│
 │  3. docker compose pull │
 │  4. docker compose up   │

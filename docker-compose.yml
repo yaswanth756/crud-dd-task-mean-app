@@ -18,7 +18,7 @@ services:
 
   # ===== 2. Backend (Node.js + Express) =====
   backend:
-    image: ${DOCKERHUB_USERNAME:-yourdockerhubusername}/crud-backend:latest
+    image: ${DOCKERHUB_USERNAME:-yaswanth3333}/crud-backend:latest
     container_name: backend
     restart: always
     ports:
@@ -36,7 +36,7 @@ services:
 
   # ===== 3. Frontend (Angular served by Nginx) =====
   frontend:
-    image: ${DOCKERHUB_USERNAME:-yourdockerhubusername}/crud-frontend:latest
+    image: ${DOCKERHUB_USERNAME:-yaswanth3333}/crud-frontend:latest
     container_name: frontend
     restart: always
     ports:
